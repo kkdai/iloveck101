@@ -3,7 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
+	"image"
+	"image/jpeg"
+	"log"
 	"net/http"
 	"os"
 	"os/user"
@@ -23,13 +25,22 @@ func worker(linkChan chan string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for url := range linkChan {
-		out, _ := os.Create(dir + "/" + imageId.FindStringSubmatch(url)[1])
-		defer out.Close()
-
 		resp, _ := http.Get(url)
 		defer resp.Body.Close()
 
-		io.Copy(out, resp.Body)
+		m, _, err := image.Decode(resp.Body)
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+
+		// Ignore small images
+		bounds := m.Bounds()
+		if bounds.Size().X > 400 && bounds.Size().Y > 400 {
+			out, _ := os.Create(dir + "/" + imageId.FindStringSubmatch(url)[1])
+			defer out.Close()
+			jpeg.Encode(out, m, nil)
+		}
 	}
 }
 
