@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,7 +34,11 @@ func worker(linkChan chan string, wg *sync.WaitGroup) {
 }
 
 func main() {
-	url := "http://ck101.com/thread-2876990-1-1.html"
+	var url string
+	var workers int
+	flag.StringVar(&url, "u", "http://ck101.com/thread-2876990-1-1.html", "Destination")
+	flag.IntVar(&workers, "w", 10, "Workers number")
+	flag.Parse()
 
 	doc, err := goquery.NewDocument(url)
 	if err != nil {
@@ -48,7 +53,7 @@ func main() {
 
 	linkChan := make(chan string)
 	wg := new(sync.WaitGroup)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go worker(linkChan, wg)
 	}
