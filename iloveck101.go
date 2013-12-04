@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
-	"log"
+	"image/png"
 	"net/http"
 	"os"
 	"os/user"
@@ -13,33 +13,44 @@ import (
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/coreos/go-log/log"
 )
 
 var (
 	dir      string
 	threadId = regexp.MustCompile(`thread-(\d*)-`)
-	imageId  = regexp.MustCompile(`img/(.*)`)
+	imageId  = regexp.MustCompile(`img/(.*)\.(jpg|png)`)
 )
 
 func worker(linkChan chan string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for url := range linkChan {
-		resp, _ := http.Get(url)
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
 		defer resp.Body.Close()
 
 		m, _, err := image.Decode(resp.Body)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
 			continue
 		}
 
 		// Ignore small images
 		bounds := m.Bounds()
 		if bounds.Size().X > 400 && bounds.Size().Y > 400 {
-			out, _ := os.Create(dir + "/" + imageId.FindStringSubmatch(url)[1])
+			imgInfo := imageId.FindStringSubmatch(url)
+			out, _ := os.Create(dir + "/" + imgInfo[1] + "." + imgInfo[2])
 			defer out.Close()
-			jpeg.Encode(out, m, nil)
+			switch imgInfo[2] {
+			case "jpg":
+				jpeg.Encode(out, m, nil)
+			case "png":
+				png.Encode(out, m)
+			}
 		}
 	}
 }
