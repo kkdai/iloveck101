@@ -2,7 +2,37 @@
 
 致敬，[https://github.com/tzangms/iloveck101](https://github.com/tzangms/iloveck101), golang version
 
-新增 Features: parallel downloading
+新增 Features:
+- parallel downloading
+- 互動式終端機：下載、搜尋
+
+Demo on YouTube: https://www.youtube.com/watch?v=dJModFNkq2A
+
+
+互動式指令
+```bash
+$ iloveck101 search 郭雪芙
+```
+
+下載某個項目
+```bash
+d 3
+```
+
+換頁(p:前一頁, n:後一頁)
+```bash
+n
+```
+
+搜尋
+```bash
+s 陳語安
+```
+
+打開資料夾
+```bash
+o
+```
 
 iloveck101 我愛卡提諾
 ====================
@@ -28,10 +58,16 @@ $ go get github.com/lazywei/iloveck101
 如何使用
 ===========
 
+直接下載
 ```bash
 $ iloveck101 -u [url] -w [workers number]
-
 ```
+
+進入互動式終端機
+```bash
+$ iloveck101 search [keyword]
+```
+
 
 for example, 你可以試試看思穎
 
