@@ -20,12 +20,12 @@ import (
 )
 
 var (
-	dir      string
+	baseDir  string
 	threadId = regexp.MustCompile(`thread-(\d*)-`)
 	imageId  = regexp.MustCompile(`([^\/]+)\.(png|jpg)`)
 )
 
-func worker(linkChan chan string, wg *sync.WaitGroup) {
+func worker(destDir string, linkChan chan string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for target := range linkChan {
@@ -46,7 +46,7 @@ func worker(linkChan chan string, wg *sync.WaitGroup) {
 		bounds := m.Bounds()
 		if bounds.Size().X > 300 && bounds.Size().Y > 300 {
 			imgInfo := imageId.FindStringSubmatch(target)
-			out, _ := os.Create(dir + "/" + imgInfo[1] + "." + imgInfo[2])
+			out, _ := os.Create(destDir + "/" + imgInfo[1] + "." + imgInfo[2])
 			defer out.Close()
 			switch imgInfo[2] {
 			case "jpg":
@@ -64,9 +64,8 @@ func crawler(target string, workerNum int) {
 		panic(err)
 	}
 
-	usr, _ := user.Current()
 	title := doc.Find("h1#thread_subject").Text()
-	dir = fmt.Sprintf("%v/Pictures/iloveck101/%v - %v", usr.HomeDir, threadId.FindStringSubmatch(target)[1], title)
+	dir := fmt.Sprint("%v/%v - %v", baseDir, threadId.FindStringSubmatch(target)[1], title)
 
 	os.MkdirAll(dir, 0755)
 
@@ -74,7 +73,7 @@ func crawler(target string, workerNum int) {
 	wg := new(sync.WaitGroup)
 	for i := 0; i < workerNum; i++ {
 		wg.Add(1)
-		go worker(linkChan, wg)
+		go worker(dir, linkChan, wg)
 	}
 
 	doc.Find("div[itemprop=articleBody] img").Each(func(i int, img *goquery.Selection) {
@@ -135,6 +134,8 @@ func printGoogleResult(keyword string, page int) (hrefs []string) {
 }
 
 func main() {
+	usr, _ := user.Current()
+	baseDir = fmt.Sprintf("%v/Pictures/iloveck101", usr.HomeDir)
 
 	var postUrl string
 	var workerNum int
@@ -183,6 +184,9 @@ func main() {
 						page = page - 1
 					}
 					hrefs = printGoogleResult(keyword, page)
+				case "s":
+					page = 0
+					hrefs = printGoogleResult(args[0], page)
 				case "d":
 					index, err := strconv.ParseUint(args[0], 0, 0)
 					if err != nil {
@@ -199,10 +203,10 @@ func main() {
 						crawler(hrefs[index], 10)
 						fmt.Println("Done!")
 					} else {
-						fmt.Println("Unsupport url", hrefs[index])
+						fmt.Println("Unsupport url:", hrefs[index])
 					}
 				default:
-					fmt.Println("unrecognized command:", cmd, args)
+					fmt.Println("Unrecognized command:", cmd, args)
 				}
 			}
 		},
