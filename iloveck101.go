@@ -16,6 +16,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	logging "github.com/op/go-logging"
+	"github.com/skratchdot/open-golang/open"
 	"github.com/spf13/cobra"
 )
 
@@ -197,6 +198,8 @@ func main() {
 				case "s":
 					page = 0
 					hrefs = printGoogleResult(args[0], page)
+				case "o":
+					open.Run(baseDir)
 				case "d":
 					index, err := strconv.ParseUint(args[0], 0, 0)
 					if err != nil {
