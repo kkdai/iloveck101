@@ -15,7 +15,7 @@ import (
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/coreos/go-log/log"
+	logging "github.com/op/go-logging"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +23,7 @@ var (
 	baseDir  string
 	threadId = regexp.MustCompile(`thread-(\d*)-`)
 	imageId  = regexp.MustCompile(`([^\/]+)\.(png|jpg)`)
+	log      = logging.MustGetLogger("iloveck101")
 )
 
 func worker(destDir string, linkChan chan string, wg *sync.WaitGroup) {
@@ -31,14 +32,14 @@ func worker(destDir string, linkChan chan string, wg *sync.WaitGroup) {
 	for target := range linkChan {
 		resp, err := http.Get(target)
 		if err != nil {
-			log.Println(err)
+			log.Debug("Http.Get\nerror: %s\ntarget: %s", err, target)
 			continue
 		}
 		defer resp.Body.Close()
 
 		m, _, err := image.Decode(resp.Body)
 		if err != nil {
-			log.Println(err)
+			log.Debug("image.Decode\nerror: %s\ntarget: %s", err, target)
 			continue
 		}
 
@@ -46,7 +47,11 @@ func worker(destDir string, linkChan chan string, wg *sync.WaitGroup) {
 		bounds := m.Bounds()
 		if bounds.Size().X > 300 && bounds.Size().Y > 300 {
 			imgInfo := imageId.FindStringSubmatch(target)
-			out, _ := os.Create(destDir + "/" + imgInfo[1] + "." + imgInfo[2])
+			out, err := os.Create(destDir + "/" + imgInfo[1] + "." + imgInfo[2])
+			if err != nil {
+				log.Debug("os.Create\nerror: %s", err)
+				continue
+			}
 			defer out.Close()
 			switch imgInfo[2] {
 			case "jpg":
@@ -65,7 +70,7 @@ func crawler(target string, workerNum int) {
 	}
 
 	title := doc.Find("h1#thread_subject").Text()
-	dir := fmt.Sprint("%v/%v - %v", baseDir, threadId.FindStringSubmatch(target)[1], title)
+	dir := fmt.Sprintf("%v/%v - %v", baseDir, threadId.FindStringSubmatch(target)[1], title)
 
 	os.MkdirAll(dir, 0755)
 
@@ -119,6 +124,7 @@ func printGoogleResult(keyword string, page int) (hrefs []string) {
 	})
 
 	// Print pages
+	fmt.Print("Pages: ")
 	for i := page - 3; i <= page+2; i++ {
 		if i >= 0 {
 			if i == page {
@@ -128,12 +134,16 @@ func printGoogleResult(keyword string, page int) (hrefs []string) {
 			}
 		}
 	}
-	fmt.Println()
+	fmt.Printf("(n:next, p:prev)\n")
 
 	return hrefs
 }
 
 func main() {
+	var format = logging.MustStringFormatter("%{level} %{message}")
+	logging.SetFormatter(format)
+	logging.SetLevel(logging.INFO, "iloveck101")
+
 	usr, _ := user.Current()
 	baseDir = fmt.Sprintf("%v/Pictures/iloveck101", usr.HomeDir)
 
@@ -148,7 +158,7 @@ func main() {
 		},
 	}
 	rootCmd.Flags().StringVarP(&postUrl, "url", "u", "http://ck101.com/thread-2876990-1-1.html", "Url of post")
-	rootCmd.Flags().IntVarP(&workerNum, "worker", "w", 10, "Number of workers")
+	rootCmd.Flags().IntVarP(&workerNum, "worker", "w", 25, "Number of workers")
 
 	searchCmd := &cobra.Command{
 		Use:   "search",
@@ -200,7 +210,7 @@ func main() {
 
 					// Only support url with format ck101.com/thread-xxx
 					if threadId.Match([]byte(hrefs[index])) {
-						crawler(hrefs[index], 10)
+						crawler(hrefs[index], 25)
 						fmt.Println("Done!")
 					} else {
 						fmt.Println("Unsupport url:", hrefs[index])
