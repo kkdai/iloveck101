@@ -86,6 +86,54 @@ func crawler(target string, workerNum int) {
 	wg.Wait()
 }
 
+// [todo] - Holy shit function, should refactor it!
+func printGoogleResult(keyword string, page int) (hrefs []string) {
+	client := &http.Client{}
+	queryUrl := fmt.Sprintf("https://www.google.com.tw/search?espv=210&es_sm=119&q=%v+site:ck101.com&start=%v", keyword, page*10)
+	req, err := http.NewRequest("GET", queryUrl, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.57 Safari/537.36")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+
+	doc, err := goquery.NewDocumentFromResponse(resp)
+	if err != nil {
+		panic(err)
+	}
+
+	hrefs = make([]string, 0)
+
+	// Print result list
+	doc.Find("li.g h3.r a").Each(func(i int, s *goquery.Selection) {
+		title := s.Text()
+		href, exist := s.Attr("href")
+		if exist {
+			hrefs = append(hrefs, href)
+			fmt.Printf("[%v] %v\n", i, title)
+		}
+	})
+
+	// Print pages
+	for i := page - 3; i <= page+2; i++ {
+		if i >= 0 {
+			if i == page {
+				fmt.Printf("[%v] ", i)
+			} else {
+				fmt.Printf("%v ", i)
+			}
+		}
+	}
+	fmt.Println()
+
+	return hrefs
+}
+
 func main() {
 
 	var postUrl string
@@ -104,38 +152,10 @@ func main() {
 	searchCmd := &cobra.Command{
 		Use:   "search",
 		Short: "Download all the images in given post url",
-		// [todo] - Holy shit function, should refactor it!
 		Run: func(cmd *cobra.Command, args []string) {
+			page := 0
 			keyword := args[0]
-			client := &http.Client{}
-			queryUrl := "https://www.google.com.tw/search?espv=210&es_sm=119&q=" + keyword + "+site:ck101.com"
-			req, err := http.NewRequest("GET", queryUrl, nil)
-			if err != nil {
-				panic(err)
-			}
-
-			req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.57 Safari/537.36")
-
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
-
-			doc, err := goquery.NewDocumentFromResponse(resp)
-			if err != nil {
-				panic(err)
-			}
-
-			hrefs := make([]string, 0)
-
-			doc.Find("li.g h3.r a").Each(func(i int, s *goquery.Selection) {
-				title := s.Text()
-				href, exist := s.Attr("href")
-				if exist {
-					hrefs = append(hrefs, href)
-					fmt.Printf("[%v] %v\n", i, title)
-				}
-			})
+			hrefs := printGoogleResult(keyword, page)
 
 			scanner := bufio.NewScanner(os.Stdin)
 			quit := false
@@ -150,11 +170,21 @@ func main() {
 				line := scanner.Text()
 				parts := strings.Split(line, " ")
 				cmd := parts[0]
+				args := parts[1:]
 
-				if cmd == "quit" {
+				switch cmd {
+				case "quit":
 					quit = true
-				} else {
-					index, err := strconv.ParseUint(cmd, 0, 0)
+				case "n":
+					page = page + 1
+					hrefs = printGoogleResult(keyword, page)
+				case "p":
+					if page > 0 {
+						page = page - 1
+					}
+					hrefs = printGoogleResult(keyword, page)
+				case "d":
+					index, err := strconv.ParseUint(args[0], 0, 0)
 					if err != nil {
 						fmt.Println(err)
 						continue
@@ -171,6 +201,8 @@ func main() {
 					} else {
 						fmt.Println("Unsupport url", hrefs[index])
 					}
+				default:
+					fmt.Println("unrecognized command:", cmd, args)
 				}
 			}
 		},
