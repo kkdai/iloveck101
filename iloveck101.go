@@ -1,7 +1,7 @@
 package main
 
 import (
-	"flag"
+	"bufio"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -10,10 +10,13 @@ import (
 	"os"
 	"os/user"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/coreos/go-log/log"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -25,8 +28,8 @@ var (
 func worker(linkChan chan string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	for url := range linkChan {
-		resp, err := http.Get(url)
+	for target := range linkChan {
+		resp, err := http.Get(target)
 		if err != nil {
 			log.Println(err)
 			continue
@@ -42,7 +45,7 @@ func worker(linkChan chan string, wg *sync.WaitGroup) {
 		// Ignore small images
 		bounds := m.Bounds()
 		if bounds.Size().X > 300 && bounds.Size().Y > 300 {
-			imgInfo := imageId.FindStringSubmatch(url)
+			imgInfo := imageId.FindStringSubmatch(target)
 			out, _ := os.Create(dir + "/" + imgInfo[1] + "." + imgInfo[2])
 			defer out.Close()
 			switch imgInfo[2] {
@@ -55,27 +58,21 @@ func worker(linkChan chan string, wg *sync.WaitGroup) {
 	}
 }
 
-func main() {
-	var url string
-	var workers int
-	flag.StringVar(&url, "u", "http://ck101.com/thread-2876990-1-1.html", "Destination")
-	flag.IntVar(&workers, "w", 10, "Workers number")
-	flag.Parse()
-
-	doc, err := goquery.NewDocument(url)
+func crawler(target string, workerNum int) {
+	doc, err := goquery.NewDocument(target)
 	if err != nil {
 		panic(err)
 	}
 
 	usr, _ := user.Current()
 	title := doc.Find("h1#thread_subject").Text()
-	dir = fmt.Sprintf("%v/Pictures/iloveck101/%v - %v", usr.HomeDir, threadId.FindStringSubmatch(url)[1], title)
+	dir = fmt.Sprintf("%v/Pictures/iloveck101/%v - %v", usr.HomeDir, threadId.FindStringSubmatch(target)[1], title)
 
 	os.MkdirAll(dir, 0755)
 
 	linkChan := make(chan string)
 	wg := new(sync.WaitGroup)
-	for i := 0; i < workers; i++ {
+	for i := 0; i < workerNum; i++ {
 		wg.Add(1)
 		go worker(linkChan, wg)
 	}
@@ -87,4 +84,98 @@ func main() {
 
 	close(linkChan)
 	wg.Wait()
+}
+
+func main() {
+
+	var postUrl string
+	var workerNum int
+
+	rootCmd := &cobra.Command{
+		Use:   "iloveck101",
+		Short: "Download all the images in given post url",
+		Run: func(cmd *cobra.Command, args []string) {
+			crawler(postUrl, workerNum)
+		},
+	}
+	rootCmd.Flags().StringVarP(&postUrl, "url", "u", "http://ck101.com/thread-2876990-1-1.html", "Url of post")
+	rootCmd.Flags().IntVarP(&workerNum, "worker", "w", 10, "Number of workers")
+
+	searchCmd := &cobra.Command{
+		Use:   "search",
+		Short: "Download all the images in given post url",
+		// [todo] - Holy shit function, should refactor it!
+		Run: func(cmd *cobra.Command, args []string) {
+			keyword := args[0]
+			client := &http.Client{}
+			queryUrl := "https://www.google.com.tw/search?espv=210&es_sm=119&q=" + keyword + "+site:ck101.com"
+			req, err := http.NewRequest("GET", queryUrl, nil)
+			if err != nil {
+				panic(err)
+			}
+
+			req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.57 Safari/537.36")
+
+			resp, err := client.Do(req)
+			if err != nil {
+				panic(err)
+			}
+
+			doc, err := goquery.NewDocumentFromResponse(resp)
+			if err != nil {
+				panic(err)
+			}
+
+			hrefs := make([]string, 0)
+
+			doc.Find("li.g h3.r a").Each(func(i int, s *goquery.Selection) {
+				title := s.Text()
+				href, exist := s.Attr("href")
+				if exist {
+					hrefs = append(hrefs, href)
+					fmt.Printf("[%v] %v\n", i, title)
+				}
+			})
+
+			scanner := bufio.NewScanner(os.Stdin)
+			quit := false
+
+			for !quit {
+				fmt.Print("ck101> ")
+
+				if !scanner.Scan() {
+					break
+				}
+
+				line := scanner.Text()
+				parts := strings.Split(line, " ")
+				cmd := parts[0]
+
+				if cmd == "quit" {
+					quit = true
+				} else {
+					index, err := strconv.ParseUint(cmd, 0, 0)
+					if err != nil {
+						fmt.Println(err)
+						continue
+					}
+					if int(index) >= len(hrefs) {
+						fmt.Println("Invalid index")
+						continue
+					}
+
+					// Only support url with format ck101.com/thread-xxx
+					if threadId.Match([]byte(hrefs[index])) {
+						crawler(hrefs[index], 10)
+						fmt.Println("Done!")
+					} else {
+						fmt.Println("Unsupport url", hrefs[index])
+					}
+				}
+			}
+		},
+	}
+
+	rootCmd.AddCommand(searchCmd)
+	rootCmd.Execute()
 }
