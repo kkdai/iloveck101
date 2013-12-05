@@ -19,7 +19,7 @@ import (
 var (
 	dir      string
 	threadId = regexp.MustCompile(`thread-(\d*)-`)
-	imageId  = regexp.MustCompile(`img/(.*)\.(jpg|png)`)
+	imageId  = regexp.MustCompile(`([^\/]+)\.(png|jpg)`)
 )
 
 func worker(linkChan chan string, wg *sync.WaitGroup) {
@@ -41,7 +41,7 @@ func worker(linkChan chan string, wg *sync.WaitGroup) {
 
 		// Ignore small images
 		bounds := m.Bounds()
-		if bounds.Size().X > 400 && bounds.Size().Y > 400 {
+		if bounds.Size().X > 300 && bounds.Size().Y > 300 {
 			imgInfo := imageId.FindStringSubmatch(url)
 			out, _ := os.Create(dir + "/" + imgInfo[1] + "." + imgInfo[2])
 			defer out.Close()
