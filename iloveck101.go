@@ -115,7 +115,7 @@ func printGoogleResult(keyword string, page int) (hrefs []string) {
 	hrefs = make([]string, 0)
 
 	// Print result list
-	doc.Find("li.g h3.r a").Each(func(i int, s *goquery.Selection) {
+	doc.Find("div.g h3.r a").Each(func(i int, s *goquery.Selection) {
 		title := s.Text()
 		href, exist := s.Attr("href")
 		if exist {
