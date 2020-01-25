@@ -3,177 +3,55 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"image"
-	"image/jpeg"
-	"image/png"
-	"net/http"
+	"log"
 	"os"
 	"os/user"
-	"regexp"
+	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
-	"github.com/PuerkitoBio/goquery"
-	logging "github.com/op/go-logging"
 	"github.com/skratchdot/open-golang/open"
 	"github.com/spf13/cobra"
+
+	. "github.com/kkdai/photomgr"
 )
 
-var (
-	baseDir  string
-	threadId = regexp.MustCompile(`thread-(\d*)-`)
-	imageId  = regexp.MustCompile(`([^\/]+)\.(png|jpg)`)
-	log      = logging.MustGetLogger("iloveck101")
-)
-
-func worker(destDir string, linkChan chan string, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	for target := range linkChan {
-		resp, err := http.Get(target)
-		if err != nil {
-			log.Debug("Http.Get\nerror: %s\ntarget: %s", err, target)
-			continue
-		}
-		defer resp.Body.Close()
-
-		m, _, err := image.Decode(resp.Body)
-		if err != nil {
-			log.Debug("image.Decode\nerror: %s\ntarget: %s", err, target)
-			continue
-		}
-
-		// Ignore small images
-		bounds := m.Bounds()
-		if bounds.Size().X > 300 && bounds.Size().Y > 300 {
-			imgInfo := imageId.FindStringSubmatch(target)
-			out, err := os.Create(destDir + "/" + imgInfo[1] + "." + imgInfo[2])
-			if err != nil {
-				log.Debug("os.Create\nerror: %s", err)
-				continue
-			}
-			defer out.Close()
-			switch imgInfo[2] {
-			case "jpg":
-				jpeg.Encode(out, m, nil)
-			case "png":
-				png.Encode(out, m)
-			}
-		}
+func printPageResult(p *CK101, count int) {
+	for i := 0; i < count; i++ {
+		title := p.GetPostTitleByIndex(i)
+		likeCount := p.GetPostStarByIndex(i)
+		fmt.Printf("%d:[%d★]%s\n", i, likeCount, title)
 	}
+	fmt.Printf("(o: open file in fider, s: top page, n:next, p:prev, quit: quit program)\n")
 }
 
-func crawler(target string, workerNum int) {
-	doc, err := goquery.NewDocument(target)
-	if err != nil {
-		panic(err)
-	}
+type NullWriter int
 
-	title := doc.Find("h1#thread_subject").Text()
-	dir := fmt.Sprintf("%v/%v - %v", baseDir, threadId.FindStringSubmatch(target)[1], title)
-
-	os.MkdirAll(dir, 0755)
-
-	linkChan := make(chan string)
-	wg := new(sync.WaitGroup)
-	for i := 0; i < workerNum; i++ {
-		wg.Add(1)
-		go worker(dir, linkChan, wg)
-	}
-
-	doc.Find("div[itemprop=articleBody] img").Each(func(i int, img *goquery.Selection) {
-		imgUrl, _ := img.Attr("file")
-		linkChan <- imgUrl
-	})
-
-	close(linkChan)
-	wg.Wait()
-}
-
-// [todo] - Holy shit function, should refactor it!
-func printGoogleResult(keyword string, page int) (hrefs []string) {
-	client := &http.Client{}
-	queryUrl := fmt.Sprintf("https://www.google.com.tw/search?espv=210&es_sm=119&q=%v+site:ck101.com&start=%v", keyword, page*10)
-	req, err := http.NewRequest("GET", queryUrl, nil)
-	if err != nil {
-		panic(err)
-	}
-
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.57 Safari/537.36")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-
-	doc, err := goquery.NewDocumentFromResponse(resp)
-	if err != nil {
-		panic(err)
-	}
-
-	hrefs = make([]string, 0)
-
-	// Print result list
-	doc.Find("div.g h3.r a").Each(func(i int, s *goquery.Selection) {
-		title := s.Text()
-		href, exist := s.Attr("href")
-		if exist {
-			hrefs = append(hrefs, href)
-			fmt.Printf("[%v] %v\n", i, title)
-		}
-	})
-
-	// Print pages
-	fmt.Print("Pages: ")
-	for i := page - 3; i <= page+2; i++ {
-		if i >= 0 {
-			if i == page {
-				fmt.Printf("[%v] ", i)
-			} else {
-				fmt.Printf("%v ", i)
-			}
-		}
-	}
-	fmt.Printf("(n:next, p:prev)\n")
-
-	return hrefs
-}
+func (NullWriter) Write([]byte) (int, error) { return 0, nil }
 
 func main() {
-	var format = logging.MustStringFormatter("%{level} %{message}")
-	logging.SetFormatter(format)
-	logging.SetLevel(logging.INFO, "iloveck101")
+
+	log.SetOutput(new(NullWriter))
+	c := NewCK101()
 
 	usr, _ := user.Current()
-	baseDir = fmt.Sprintf("%v/Pictures/iloveck101", usr.HomeDir)
+	c.BaseDir = fmt.Sprintf("%v/Pictures/iloveCK101", usr.HomeDir)
 
-	var postUrl string
 	var workerNum int
-
 	rootCmd := &cobra.Command{
-		Use:   "iloveck101",
-		Short: "Download all the images in given post url",
-		Run: func(cmd *cobra.Command, args []string) {
-			crawler(postUrl, workerNum)
-		},
-	}
-	rootCmd.Flags().StringVarP(&postUrl, "url", "u", "http://ck101.com/thread-2876990-1-1.html", "Url of post")
-	rootCmd.Flags().IntVarP(&workerNum, "worker", "w", 25, "Number of workers")
-
-	searchCmd := &cobra.Command{
-		Use:   "search",
+		Use:   "iloveCK101",
 		Short: "Download all the images in given post url",
 		Run: func(cmd *cobra.Command, args []string) {
 			page := 0
-			keyword := args[0]
-			hrefs := printGoogleResult(keyword, page)
+			pagePostCoubt := 0
+			pagePostCoubt = c.ParseCK101PageByIndex(page)
+			printPageResult(c, pagePostCoubt)
 
 			scanner := bufio.NewScanner(os.Stdin)
 			quit := false
 
 			for !quit {
-				fmt.Print("ck101> ")
+				fmt.Print("CK101:> ")
 
 				if !scanner.Scan() {
 					break
@@ -189,34 +67,44 @@ func main() {
 					quit = true
 				case "n":
 					page = page + 1
-					hrefs = printGoogleResult(keyword, page)
+					pagePostCoubt = c.ParseCK101PageByIndex(page)
+					printPageResult(c, pagePostCoubt)
 				case "p":
 					if page > 0 {
 						page = page - 1
 					}
-					hrefs = printGoogleResult(keyword, page)
+					pagePostCoubt = c.ParseCK101PageByIndex(page)
+					printPageResult(c, pagePostCoubt)
 				case "s":
 					page = 0
-					hrefs = printGoogleResult(args[0], page)
+					pagePostCoubt = c.ParseCK101PageByIndex(page)
+					printPageResult(c, pagePostCoubt)
 				case "o":
-					open.Run(baseDir)
+					open.Run(filepath.FromSlash(c.BaseDir))
 				case "d":
-					index, err := strconv.ParseUint(args[0], 0, 0)
+					if len(args) == 0 {
+						fmt.Println("You don't input any article index. Input as 'd 1'")
+						continue
+					}
+
+					index, err := strconv.Atoi(args[0])
 					if err != nil {
 						fmt.Println(err)
 						continue
 					}
-					if int(index) >= len(hrefs) {
+
+					url := c.GetPostUrlByIndex(index)
+
+					if int(index) >= len(url) {
 						fmt.Println("Invalid index")
 						continue
 					}
 
-					// Only support url with format ck101.com/thread-xxx
-					if threadId.Match([]byte(hrefs[index])) {
-						crawler(hrefs[index], 25)
+					if c.HasValidURL(url) {
+						c.Crawler(url, 25)
 						fmt.Println("Done!")
 					} else {
-						fmt.Println("Unsupport url:", hrefs[index])
+						fmt.Println("Unsupport url:", url)
 					}
 				default:
 					fmt.Println("Unrecognized command:", cmd, args)
@@ -225,6 +113,6 @@ func main() {
 		},
 	}
 
-	rootCmd.AddCommand(searchCmd)
+	rootCmd.Flags().IntVarP(&workerNum, "worker", "w", 25, "Number of workers")
 	rootCmd.Execute()
 }
